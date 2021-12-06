@@ -46,11 +46,17 @@ class PhotoState {
 class AppModel {
   Stream<bool> get isTagging => _taggingController.stream;
   Stream<List<PhotoState>> get photoStates => _photoStateController.stream;
+  Sink<String> get photoLongPressSink => _photoLongPressController.sink;
+  Sink<PhotoState> get photoTapSink => _photoTapController.sink;
+  Sink<String> get tagTapSink => _tagTapController.sink;
 
   final StreamController<bool> _taggingController =
       StreamController.broadcast();
   final StreamController<List<PhotoState>> _photoStateController =
       StreamController.broadcast();
+  final StreamController<String> _photoLongPressController = StreamController();
+  final StreamController<PhotoState> _photoTapController = StreamController();
+  final StreamController<String> _tagTapController = StreamController();
 
   AppModel() {
     _photoStateController.onListen = () {
@@ -60,6 +66,18 @@ class AppModel {
     _taggingController.onListen = () {
       _taggingController.add(_isTagging);
     };
+
+    _photoLongPressController.stream.listen((url) {
+      _toggleTagging(url);
+    });
+
+    _photoTapController.stream.listen((ps) {
+      _onPhotoSelect(ps.url, !ps.selected);
+    });
+
+    _tagTapController.stream.listen((tag) {
+      _selectTag(tag);
+    });
   }
 
   bool _isTagging = false;
@@ -68,7 +86,7 @@ class AppModel {
 
   Set<String> tags = {'all', 'hero', 'dragon', 'emblem'};
 
-  void toggleTagging(String url) {
+  void _toggleTagging(String url) {
     _isTagging = !_isTagging;
     for (var element in _photoStates) {
       if (_isTagging && element.url == url) {
@@ -81,7 +99,7 @@ class AppModel {
     _photoStateController.add(_photoStates);
   }
 
-  void onPhotoSelect(String url, bool selected) {
+  void _onPhotoSelect(String url, bool selected) {
     for (var element in _photoStates) {
       if (element.url == url) {
         element.selected = selected;
@@ -90,7 +108,7 @@ class AppModel {
     _photoStateController.add(_photoStates);
   }
 
-  void selectTag(String tag) {
+  void _selectTag(String tag) {
     if (_isTagging) {
       if (tag != "all") {
         for (var element in _photoStates) {
@@ -99,7 +117,7 @@ class AppModel {
           }
         }
       }
-      toggleTagging('null');
+      _toggleTagging('null');
     } else {
       for (var element in _photoStates) {
         element.display = tag == "all" ? true : element.tags.contains(tag);
@@ -143,7 +161,7 @@ class GalleryPage extends StatelessWidget {
         children: List.of(model.tags.map((t) => ListTile(
               title: Text(t),
               onTap: () {
-                model.selectTag(t);
+                model.tagTapSink.add(t);
                 Navigator.of(context).pop();
               },
             ))),
@@ -168,7 +186,7 @@ class Photo extends StatelessWidget {
           List<Widget> children = [
             GestureDetector(
                 child: Image.network(state.url),
-                onLongPress: () => model.toggleTagging(state.url))
+                onLongPress: () => model.photoLongPressSink.add(state.url))
           ];
 
           if (snapshot.data!) {
@@ -180,7 +198,7 @@ class Photo extends StatelessWidget {
                         .copyWith(unselectedWidgetColor: Colors.grey[200]),
                     child: Checkbox(
                       onChanged: (value) {
-                        model.onPhotoSelect(state.url, value ?? false);
+                        model.photoTapSink.add(state);
                       },
                       value: state.selected,
                       activeColor: Colors.grey.shade200,
