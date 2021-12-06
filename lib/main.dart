@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:provider/provider.dart';
 
 void main() {
-  runApp(App());
+  runApp(ChangeNotifierProvider(
+    create: (_) => _AppState(),
+    child: App(),
+  ));
 }
 
 const List<String> urls = [
@@ -12,11 +16,18 @@ const List<String> urls = [
   'https://i.ytimg.com/vi/ooqdJTYspyo/maxresdefault.jpg'
 ];
 
-class App extends StatefulWidget {
+class App extends StatelessWidget {
   const App({Key? key}) : super(key: key);
 
   @override
-  _AppState createState() => _AppState();
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Photo Viewer',
+      home: GalleryPage(
+        title: 'Image Gallery',
+      ),
+    );
+  }
 }
 
 class PhotoState {
@@ -28,93 +39,57 @@ class PhotoState {
   PhotoState(this.url, {this.selected = false, this.display = true, tags});
 }
 
-class MyInheritedWidget extends InheritedWidget {
-  final _AppState state;
-  MyInheritedWidget({Key? key, required Widget child, required this.state})
-      : super(key: key, child: child);
-
-  @override
-  bool updateShouldNotify(_) => true;
-}
-
-class _AppState extends State<App> {
+class _AppState with ChangeNotifier {
   bool isTagging = false;
   Set<String> tags = {'all', 'hero', 'dragon', 'emblem'};
 
   List<PhotoState> photoStates = List.of(urls.map((url) => PhotoState(url)));
 
   void selectTag(String tag) {
-    setState(() {
-      if (isTagging) {
-        if (tag != "all") {
-          photoStates.forEach((element) {
-            if (element.selected) {
-              element.tags.add(tag);
-            }
-          });
-        }
-        toggleTagging('null');
-      } else {
+    if (isTagging) {
+      if (tag != "all") {
         photoStates.forEach((element) {
-          element.display = tag == "all" ? true : element.tags.contains(tag);
+          if (element.selected) {
+            element.tags.add(tag);
+          }
         });
       }
-    });
+      toggleTagging('null');
+    } else {
+      photoStates.forEach((element) {
+        element.display = tag == "all" ? true : element.tags.contains(tag);
+      });
+    }
+    notifyListeners();
   }
 
   void toggleTagging(String url) {
-    setState(() {
-      isTagging = !isTagging;
-      for (var element in photoStates) {
-        if (isTagging && element.url == url) {
-          element.selected = true;
-        } else {
-          element.selected = false;
-        }
+    isTagging = !isTagging;
+    for (var element in photoStates) {
+      if (isTagging && element.url == url) {
+        element.selected = true;
+      } else {
+        element.selected = false;
       }
-    });
+    }
+    notifyListeners();
   }
 
   void onPhotoSelect(String url, bool selected) {
-    setState(() {
-      for (var element in photoStates) {
-        if (element.url == url) {
-          element.selected = selected;
-        }
+    for (var element in photoStates) {
+      if (element.url == url) {
+        element.selected = selected;
       }
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Photo Viewer',
-      home: MyInheritedWidget(
-        state: this,
-        child: Builder(
-          builder: (BuildContext innerContext) {
-            return GalleryPage(
-              title: 'Image Gallery',
-              model: innerContext
-                  .dependOnInheritedWidgetOfExactType<
-                      MyInheritedWidget>()! // Todo handle the null case
-                  .state,
-            );
-          },
-        ),
-      ),
-    );
+    }
+    notifyListeners();
   }
 }
 
 class GalleryPage extends StatelessWidget {
   final String title;
-  final _AppState model;
+  // final _AppState model;
 
-  GalleryPage({
-    required this.title,
-    required this.model,
-  });
+  GalleryPage({required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -122,28 +97,21 @@ class GalleryPage extends StatelessWidget {
       appBar: AppBar(
         title: Text(title),
       ),
-      body: Builder(
-        builder: (BuildContext innerContext) {
-          return GridView.count(
-            primary: false,
-            crossAxisCount: (2),
-            children: List.of(
-                model.photoStates.where((ps) => ps.display).map((ps) => Photo(
-                      state: ps,
-                      model: innerContext
-                          .dependOnInheritedWidgetOfExactType<
-                              MyInheritedWidget>()!
-                          .state,
-                    ))),
-          );
-        },
+      body: GridView.count(
+        primary: false,
+        crossAxisCount: (2),
+        children: List.of(context
+            .watch<_AppState>()
+            .photoStates
+            .where((ps) => ps.display)
+            .map((ps) => Photo(state: ps))),
       ),
       drawer: Drawer(
           child: ListView(
-        children: List.of(model.tags.map((t) => ListTile(
+        children: List.of(context.watch<_AppState>().tags.map((t) => ListTile(
               title: Text(t),
               onTap: () {
-                model.selectTag(t);
+                context.read<_AppState>().selectTag(t);
                 Navigator.of(context).pop();
               },
             ))),
@@ -154,18 +122,18 @@ class GalleryPage extends StatelessWidget {
 
 class Photo extends StatelessWidget {
   final PhotoState state;
-  final _AppState model;
+  // final _AppState model;
 
-  Photo({required this.state, required this.model});
+  Photo({required this.state});
 
   @override
   Widget build(BuildContext context) {
     List<Widget> children = [
       GestureDetector(
           child: Image.network(state.url),
-          onLongPress: () => model.toggleTagging(state.url))
+          onLongPress: () => context.read<_AppState>().toggleTagging(state.url))
     ];
-    if (model.isTagging) {
+    if (context.watch<_AppState>().isTagging) {
       children.add(Positioned(
           left: 20,
           top: 0,
@@ -174,7 +142,9 @@ class Photo extends StatelessWidget {
                   .copyWith(unselectedWidgetColor: Colors.grey[200]),
               child: Checkbox(
                 onChanged: (value) {
-                  model.onPhotoSelect(state.url, value ?? false);
+                  context
+                      .read<_AppState>()
+                      .onPhotoSelect(state.url, value ?? false);
                 },
                 value: state.selected,
                 activeColor: Colors.grey.shade200,
